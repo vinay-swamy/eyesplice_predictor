@@ -6,20 +6,47 @@ def readSampleFile(samplefile):
             info=line.strip('\n').split('\t')
             res[info[0]]={'files':info[1].split(','),'paired':True if info[2]=='y' else False, 'tissue':info[3],'subtissue':info[4]}
     return(res)
+def salmon_input(id,sample_dict,fql):
+    paired=sample_dict[id]['paired']
+    id= fql + 'fastq_files/' + id
+    if paired:
+        return('-1 {s}_1.fastq.gz -2 {s}_2.fastq.gz'.format(s=id))
+    else:
+        return('-r {}.fastq.gz'.format(id))
+#software versioning
+salmon_version=config['salmon_version']
+stringtie_version=config['stringtie_version']
+STAR_version=config['STAR_version']
+rmats_version=config['rmats_verson']
+R_version=config['R_version']
+TransDecoder_version=config['TransDecoder_version']
+samtools_version=config['samtools_version']
+gffcompare_version=config['gffcompare_version']
+hmmer_version=config['hmmer_version']
+crossmap_version=config['crossmap_version']
+deeptools_version=config['deeptools_version']
+mosdepth_version=config['mosdepth_version']
+bedtools_version=config['bedtools_version']
+working_dir=config['working_dir']
+
 
 sample_file=config['sampleFile']
 sample_dict=readSampleFile(config['sampleFile'])# sampleID:dict{path,paired,metadata}
 sample_names=sample_dict.keys()
-gtf=config['gtf_file']
+gtf=config['gtf']
 genome=config['genome']
 tx_fasta=config['tx_fasta']
 fql=config['fastq_path']
 bam_path=config['bam_path']
 subtissues=['RPE_Fetal_PE', 'synth']
+rmats_events=['SE','RI','MXE','A5SS','A3SS']
+rule all:
+    input: expand('quant_files/{sampleID}/quant.sf', sampleID=sample_names), expand('st_out/{sampleID}.gtf', sampleID=sample_names),\
+    expand('rmats_out/{tissue}/{event}.MATS.JC.txt', event=rmats_events, tissue=subtissues)
 
 rule build_STAR_index:
     input:genome, gtf
-    output:'ref/STARindex'
+    output:directory('ref/STARindex')
     shell:
         '''
         module load {STAR_version}
@@ -41,14 +68,14 @@ rule align_STAR:
 
 rule sort_bams:
     input:bam_path+'STARbams/{id}/raw.Aligned.out.bam'
-    output:bam_path+'STARbams/{id}/Aligned.out.bam'
+    output:bam_path+'STARbams/{id}/Sorted.out.bam'
     shell:
         '''
         module load {samtools_version}
         samtools sort -o {output[0]} --threads 7 {input[0]}
         '''
 rule run_stringtie:
-    input: bam_path+'STARbams/{sample}/Aligned.out.bam'
+    input: bam_path+'STARbams/{sample}/Sorted.out.bam'
     output:'st_out/{sample}.gtf'
     shell:
         '''
@@ -62,12 +89,14 @@ rule preprMats_running:
     shell:
         #include trailing / for bam_dir
         '''
-        module load {R_version}
-        Rscript scripts/preprMATSV2.R {working_dir} {config[sampleFile]} {params.bam_dir}
+        bam_path={bam_path}/STARbams/
+        suff=/Sorted.out.bam
+        grep synth {sample_file} | cut -f1 | while read p; do echo "$bam_path/$p/$suff"; done  > ref/rmats_locs/synth.rmats.txt
+        grep -v synth {sample_file} | cut -f1 | while read p; do echo "$bam_path/$p/$suff"; done  > ref/rmats_locs/RPE_Fetal_PE.rmats.txt
         '''
 
 rule runrMATS:
-    input: 'ref/rmats_locs/{tissue}.rmats.txt','ref/STARindex_stringtie',stringtie_full_gtf
+    input: 'ref/rmats_locs/{tissue}.rmats.txt','ref/STARindex',gtf
     output:expand('rmats_out/{{tissue}}/{event}.MATS.JC.txt', event=rmats_events)
     # might have to change read length to some sort of function
     shell:
