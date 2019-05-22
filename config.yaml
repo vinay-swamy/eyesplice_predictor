@@ -1,0 +1,5 @@
+fastq_path: '/data/OGVFB_BG/EiaD_2019_05/'
+bam_path: '/data/swamyvs/eyesplice_predictor'
+gtf: 'ref/gencodeAno_comp.gtf'
+genome: 'ref/gencodePA.fa'
+tx_fasta: 'ref/gencode_tx.fasta'
