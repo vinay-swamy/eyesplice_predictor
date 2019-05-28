@@ -13,6 +13,13 @@ def salmon_input(id,sample_dict,fql):
         return('-1 {s}_1.fastq.gz -2 {s}_2.fastq.gz'.format(s=id))
     else:
         return('-r {}.fastq.gz'.format(id))
+def tissue_to_gtf(tissue, sample_dict):
+    res=[]
+    for sample in sample_dict.keys():
+        if sample_dict[sample]['tissue']==tissue :
+            res.append('st_out/{}.gtf'.format(sample))
+    return (res)
+
 #software versioning
 salmon_version=config['salmon_version']
 stringtie_version=config['stringtie_version']
@@ -38,13 +45,13 @@ genome=config['genome']
 tx_fasta=config['tx_fasta']
 fql=config['fastq_path']
 bam_path=config['bam_path']
-subtissues=['RPE_Fetal_PE', 'synth']
+subtissues=['RPE_Fetal.Tissue', 'synth']
 rmats_events=['SE','RI','MXE','A5SS','A3SS']
 rule all:
-    input: expand('quant_files/{sampleID}/quant.sf', sampleID=sample_names), expand('st_out/{sampleID}.gtf', sampleID=sample_names),\
+    input: expand('quant_files/{sampleID}/quant.sf', sampleID=sample_names), expand('ref/tissue_gtfs/{tissue}_st.gtf', tissue=subtissues),\
     expand('rmats_out/{tissue}/{event}.MATS.JC.txt', event=rmats_events, tissue=subtissues)
 
-rule build_STAR_index:
+rule build_STARindex:
     input:genome, gtf
     output:directory('ref/STARindex')
     shell:
@@ -80,8 +87,22 @@ rule run_stringtie:
     shell:
         '''
         module load {stringtie_version}
-        stringtie {input[0]} -o {output[0]} -p 8 -G ref/gencodeAno_bsc.gtf
+        stringtie {input[0]} -o {output[0]} -p 8 -G {gtf}
         '''
+
+rule merge_gtfs_by_tissue:
+    input: lambda wildcards: tissue_to_gtf(wildcards.tissue, sample_dict)
+    output: 'ref/tissue_gtfs/{tissue}_st.gtf'
+    shell:
+        '''
+        pattern={wildcards.tissue}
+        num=2
+        k=3
+        module load {stringtie_version}
+        stringtie --merge -G {gtf} -l {wildcards.tissue}_MSTRG -F 2 -o {output[0]} {input}
+        '''
+
+
 rule preprMats_running:
     input: expand(bam_path+'STARbams/{id}/Sorted.out.bam',id=sample_names)
     params: bam_dir=bam_path + 'STARbams/'
@@ -91,8 +112,8 @@ rule preprMats_running:
         '''
         bam_path={bam_path}/STARbams/
         suff=/Sorted.out.bam
-        grep synth {sample_file} | cut -f1 | while read p; do echo "$bam_path/$p/$suff"; done  > ref/rmats_locs/synth.rmats.txt
-        grep -v synth {sample_file} | cut -f1 | while read p; do echo "$bam_path/$p/$suff"; done  > ref/rmats_locs/RPE_Fetal_PE.rmats.txt
+        grep synth {sample_file} | cut -f1 | while read p; do echo "$bam_path/$p/$suff"; done | tr '\n' ',' > ref/rmats_locs/synth.rmats.txt
+        grep -v synth {sample_file} | cut -f1 | while read p; do echo "$bam_path/$p/$suff"; done| tr '\n' ','  > ref/rmats_locs/RPE_Fetal_PE.rmats.txt
         '''
 
 rule runrMATS:
@@ -108,7 +129,7 @@ rule runrMATS:
         '''
 rule build_salmon_index:
     input:  tx_fasta
-    output:'ref/salmonindex_st'
+    output: directory('ref/salmonindex_st')
     shell:
         '''
         module load {salmon_version}
