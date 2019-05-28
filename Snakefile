@@ -112,8 +112,17 @@ rule preprMats_running:
         '''
         bam_path={bam_path}/STARbams/
         suff=/Sorted.out.bam
-        grep synth {sample_file} | cut -f1 | while read p; do echo "$bam_path/$p/$suff"; done | tr '\n' ',' > ref/rmats_locs/synth.rmats.txt
-        grep -v synth {sample_file} | cut -f1 | while read p; do echo "$bam_path/$p/$suff"; done| tr '\n' ','  > ref/rmats_locs/RPE_Fetal_PE.rmats.txt
+        cut -f5 {sample_file} | sort -u | \
+        while read subtissue
+        do
+            grep $subtissue {sample_file} | \
+            cut -f1 | \
+            while read p
+            do
+                echo "$bam_path/$p/$suff"
+            done | \
+            tr '\\n' ',' > ref/rmats_locs/$subtissue.rmats.txt
+        done
         '''
 
 rule runrMATS:
