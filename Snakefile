@@ -48,102 +48,8 @@ bam_path=config['bam_path']
 subtissues=['RPE_Fetal.Tissue', 'synth']
 rmats_events=['SE','RI','MXE','A5SS','A3SS']
 rule all:
-    input: expand('quant_files/{sampleID}/quant.sf', sampleID=sample_names), expand('ref/tissue_gtfs/{tissue}_st.gtf', tissue=subtissues),\
-    expand('rmats_out/{tissue}/{event}.MATS.JC.txt', event=rmats_events, tissue=subtissues)
-
-rule build_STARindex:
-    input:genome, gtf
-    output:directory('ref/STARindex')
-    shell:
-        '''
-        module load {STAR_version}
-        mkdir -p ref/STARindex
-        STAR --runThreadN 16 --runMode genomeGenerate --genomeDir {output[0]} --genomeFastaFiles {input[0]} --sjdbGTFfile {input[1]} --sjdbOverhang 100
-        '''
-rule align_STAR:
-    input: fastqs=lambda wildcards: [fql+'fastq_files/{}_1.fastq.gz'.format(wildcards.id),fql+'fastq_files/{}_2.fastq.gz'.format(wildcards.id)] if sample_dict[wildcards.id]['paired'] else fql+'fastq_files/{}.fastq.gz'.format(wildcards.id),
-        index='ref/STARindex'
-    output: temp(bam_path+'STARbams/{id}/raw.Aligned.out.bam'), bam_path + 'STARbams/{id}/raw.Log.final.out'
-    shell:
-        '''
-        id={wildcards.id}
-        mkdir -p {bam_path}/STARbams/$id
-        module load {STAR_version}
-        STAR --runThreadN 8 --genomeDir {input.index} --outSAMstrandField intronMotif  --readFilesIn {input.fastqs} \
-        --readFilesCommand gunzip -c --outFileNamePrefix {bam_path}/STARbams/$id/raw. --outSAMtype BAM Unsorted
-        '''
-
-rule sort_bams:
-    input:bam_path+'STARbams/{id}/raw.Aligned.out.bam'
-    output:bam_path+'STARbams/{id}/Sorted.out.bam'
-    shell:
-        '''
-        module load {samtools_version}
-        samtools sort -o {output[0]} --threads 7 {input[0]}
-        '''
-rule run_stringtie:
-    input: bam_path+'STARbams/{sample}/Sorted.out.bam'
-    output:'st_out/{sample}.gtf'
-    shell:
-        '''
-        module load {stringtie_version}
-        stringtie {input[0]} -o {output[0]} -p 8 -G {gtf}
-        '''
-
-rule merge_gtfs_by_tissue:
-    input: lambda wildcards: tissue_to_gtf(wildcards.tissue, sample_dict)
-    output: 'ref/tissue_gtfs/{tissue}_st.gtf'
-    shell:
-        '''
-        pattern={wildcards.tissue}
-        num=2
-        k=3
-        module load {stringtie_version}
-        stringtie --merge -G {gtf} -l {wildcards.tissue}_MSTRG -F 2 -o {output[0]} {input}
-        '''
-
-
-rule preprMats_running:
-    input: expand(bam_path+'STARbams/{id}/Sorted.out.bam',id=sample_names)
-    params: bam_dir=bam_path + 'STARbams/'
-    output:expand('ref/rmats_locs/{tissue}.rmats.txt',tissue=subtissues)
-    shell:
-        #include trailing / for bam_dir
-        '''
-        bam_path={bam_path}/STARbams/
-        suff=/Sorted.out.bam
-        cut -f5 {sample_file} | sort -u | \
-        while read subtissue
-        do
-            grep $subtissue {sample_file} | \
-            cut -f1 | \
-            while read p
-            do
-                echo "$bam_path/$p/$suff"
-            done | \
-            tr '\\n' ',' > ref/rmats_locs/$subtissue.rmats.txt
-        done
-        '''
-
-rule runrMATS:
-    input: 'ref/rmats_locs/{tissue}.rmats.txt','ref/STARindex',gtf
-    output:expand('rmats_out/{{tissue}}/{event}.MATS.JC.txt', event=rmats_events)
-    # might have to change read length to some sort of function
-    shell:
-        '''
-        tissue={wildcards.tissue}
-        module load {rmats_version}
-        rmats --b1 {input[0]} --b2 ref/rmats_locs/synth.rmats.txt  -t paired  \
-        --nthread 8  --readLength 130 --gtf {input[2]} --bi {input[1]} --od rmats_out/$tissue
-        '''
-rule build_salmon_index:
-    input:  tx_fasta
-    output: directory('ref/salmonindex_st')
-    shell:
-        '''
-        module load {salmon_version}
-        salmon index -t {input} --gencode -i {output} --type quasi --perfectHash -k 31
-        '''
+    input: expand('quant_files/{sampleID}/quant.sf', sampleID=sample_names),\
+    'data/all_exons.bed'
 
 rule run_salmon:
     input: fastqs=lambda wildcards: [fql+'fastq_files/{}_1.fastq.gz'.format(wildcards.sampleID),fql+'fastq_files/{}_2.fastq.gz'.format(wildcards.sampleID)] if sample_dict[wildcards.sampleID]['paired'] else fql+'fastq_files/{}.fastq.gz'.format(wildcards.sampleID),
@@ -155,4 +61,21 @@ rule run_salmon:
         id={wildcards.sampleID}
         module load {salmon_version}
         salmon quant -p 4 -i {input.index} -l A --gcBias --seqBias  {params.cmd} -o quant_files/$id
+        '''
+rule makeExonBeds:
+    input: expand('quant_files/{sampleID}/quant.sf', sampleID=sample_names)
+    output: expand('data/{type}_{direction}_full_tab.tsv',type=['grow', 'ref'],direction=['end', 'start']),\
+      expand('data/{type}_{direction}_longer.bed',type=['grow', 'ref'], direction=['end', 'start'] )
+    shell:
+        '''
+        module load {R_version}
+        Rscript scripts/makeExonBed.R {working_dir} {sample_file} {gtf} {output}
+        '''
+rule mergeBeds:
+    input: expand('data/{type}_{direction}_longer.bed',type=['grow','ref'], direction=['end', 'start'] )
+    output:'data/all_exons.bed'
+    shell:
+        '''
+        module load {bedtools_version}
+        bash scripts/merge_beds_distinct.sh {input} {output}
         '''
