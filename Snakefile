@@ -49,7 +49,57 @@ subtissues=['RPE_Fetal.Tissue', 'synth']
 rmats_events=['SE','RI','MXE','A5SS','A3SS']
 rule all:
     input: expand('quant_files/{sampleID}/quant.sf', sampleID=sample_names),\
-    'data/all_exons.bed'
+    'data/all_exons.bed', expand('data/cleaned/{sample}_bp_features.tsv', sample=sample_names)
+
+rule build_STARindex:
+    input:genome, gtf
+    output:directory('ref/STARindex')
+    shell:
+        '''
+        module load {STAR_version}
+        mkdir -p ref/STARindex
+        STAR --runThreadN 16 --runMode genomeGenerate --genomeDir {output[0]} --genomeFastaFiles {input[0]} --sjdbGTFfile {input[1]} --sjdbOverhang 100
+        '''
+rule align_STAR:
+    input: fastqs=lambda wildcards: [fql+'fastq_files/{}_1.fastq.gz'.format(wildcards.id),fql+'fastq_files/{}_2.fastq.gz'.format(wildcards.id)] if sample_dict[wildcards.id]['paired'] else fql+'fastq_files/{}.fastq.gz'.format(wildcards.id),
+        index='ref/STARindex'
+    output: temp(bam_path+'STARbams/{id}/raw.Aligned.out.bam'), bam_path + 'STARbams/{id}/raw.Log.final.out'
+    shell:
+        '''
+        id={wildcards.id}
+        mkdir -p {bam_path}/STARbams/$id
+        module load {STAR_version}
+        STAR --runThreadN 8 --genomeDir {input.index} --outSAMstrandField intronMotif  --readFilesIn {input.fastqs} \
+        --readFilesCommand gunzip -c --outFileNamePrefix {bam_path}/STARbams/$id/raw. --outSAMtype BAM Unsorted
+        '''
+
+rule sort_bams:
+    input:bam_path+'STARbams/{id}/raw.Aligned.out.bam'
+    output:bam_path+'STARbams/{id}/Sorted.out.bam'
+    shell:
+        '''
+        module load {samtools_version}
+        samtools sort -o {output[0]} --threads 7 {input[0]}
+        '''
+rule index_bams:
+    input: bam_path+'STARbams/{id}/Sorted.out.bam'
+    output: bam_path+'STARbams/{id}/Sorted.out.bam.bai'
+    shell:
+        '''
+        module load {samtools_version}
+        samtools index -b {input}
+        '''
+
+rule calculate_cov:
+    input:bam_path+'STARbams/{id}/Sorted.out.bam', bam_path+'STARbams/{id}/Sorted.out.bam.bai'
+    output: 'coverage_files/{id}.per-base.bed.gz'
+    shell:
+        '''
+        module load mosdepth
+        sample={wildcards.id}
+        mosdepth coverage_files/$sample {input[0]}
+        '''
+
 
 rule run_salmon:
     input: fastqs=lambda wildcards: [fql+'fastq_files/{}_1.fastq.gz'.format(wildcards.sampleID),fql+'fastq_files/{}_2.fastq.gz'.format(wildcards.sampleID)] if sample_dict[wildcards.sampleID]['paired'] else fql+'fastq_files/{}.fastq.gz'.format(wildcards.sampleID),
@@ -78,4 +128,22 @@ rule mergeBeds:
         '''
         module load {bedtools_version}
         bash scripts/merge_beds_distinct.sh {input} {output}
+        '''
+
+rule intersect_coverage:
+    input:'data/all_exons.bed', 'coverage_files/{sample}.per-base.bed.gz'
+    output:'coverage_files/{sample}_exon_cov.bed'
+    shell:
+        '''
+        module load bedtools
+        cut -f1,2,3,4 {input[0]} |
+        bedtools intersect -loj -a {input[1]} -b stdin | awk ' $6 != "-1"' - >  {output}
+        '''
+
+rule spread_coverage:
+    input:'coverage_files/{sample}_exon_cov.bed'
+    output: 'data/cleaned/{sample}_bp_features.tsv'
+    shell:
+        '''
+        python3 scripts/makePerBaseFeatureTable.py {working_dir} {input} {output}
         '''

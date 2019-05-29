@@ -77,7 +77,19 @@
                 "error" : "00log/{rule}_{wildcards}.err",
                 "extra" : ""
 
-	}
+	},
+        "calculate_cov":
+        {
+                "partition" : "quick",
+                "cpus-per-task" : "1",
+                "time" : "2:00:00",
+                "mem" : "32g",
+                "output"  : "00log/{rule}_{wildcards}.out",
+                "error" : "00log/{rule}_{wildcards}.err",
+                "extra" : ""
+
+        }
+
 
 
 }
