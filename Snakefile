@@ -99,6 +99,14 @@ rule calculate_cov:
         sample={wildcards.id}
         mosdepth coverage_files/$sample {input[0]}
         '''
+rule build_salmon_index:
+    input:  tx_fasta
+    output: directory('ref/salmonindex_st')
+    shell:
+        '''
+        module load {salmon_version}
+        salmon index -t {input} --gencode -i {output} --type quasi --perfectHash -k 31
+        '''
 
 
 rule run_salmon:
