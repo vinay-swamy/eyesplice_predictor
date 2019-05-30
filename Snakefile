@@ -35,7 +35,7 @@ deeptools_version=config['deeptools_version']
 mosdepth_version=config['mosdepth_version']
 bedtools_version=config['bedtools_version']
 working_dir=config['working_dir']
-
+win_size=config['window_size']
 
 sample_file=config['sampleFile']
 sample_dict=readSampleFile(config['sampleFile'])# sampleID:dict{path,paired,metadata}
@@ -119,7 +119,7 @@ rule makeExonBeds:
     shell:
         '''
         module load {R_version}
-        Rscript scripts/makeExonBed.R {working_dir} {sample_file} {gtf} {output}
+        Rscript scripts/makeExonBed.R {working_dir} {sample_file} {gtf} {win_size} {output}
         '''
 rule mergeBeds:
     input: expand('data/{type}_{direction}_longer.bed',type=['grow','ref'], direction=['end', 'start'] )

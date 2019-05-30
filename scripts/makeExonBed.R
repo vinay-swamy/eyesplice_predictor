@@ -3,14 +3,15 @@ args <- commandArgs(trailingOnly = T)
 wd <- args[1]
 sample_file <- args[2]
 ref_gtf_file <- args[3]
-grow_full_end_tab <- args[4]
-grow_full_start_tab <- args[5]
-ref_full_end_tab <- args[6]
-ref_full_start_tab <- args[7]
-grow_end_longer <- args[8]
-grow_start_longer <- args[9]
-ref_end_longer <- args[10]
-ref_start_longer <- args[11]
+wsize <- args[4]
+grow_full_end_tab <- args[5]
+grow_full_start_tab <- args[6]
+ref_full_end_tab <- args[7]
+ref_full_start_tab <- args[8]
+grow_end_longer <- args[9]
+grow_start_longer <- args[10]
+ref_end_longer <- args[11]
+ref_start_longer <- args[12]
 #save(args, file = 'testing/args.rdata')
 setwd(wd)
 ref_gtf <- rtracklayer::readGFF(ref_gtf_file)
@@ -22,8 +23,8 @@ colnames(txi$counts) <- names
 #lets try min 5 counts per sample
 counts <- txi$counts %>% as.data.frame() %>%  mutate(ID=rownames(.)) %>% 
     select(ID, sample_table %>% filter(tissue=='RPE_Fetal.Tissue') %>% pull(sample)) %>% {filter(., rowSums(.[,-1]) > ncol(.[,-1])*5 )}
-#variables for data collection - windowsize,number of isoforms for a given tx
-wsize=40 #lets fix window size, and only keep exons that have 2 isoforms.
+#variables for data collection - windowsize,number of isoforms for a given tx( fixing at 2 rn)
+#lets fix window size, and only keep exons that have 2 isoforms.
 
 end_longer_all <- filter(ref_gtf, type == 'exon',transcript_id %in% counts$ID) %>% group_by(seqid, strand, start ) %>% 
     summarise(n=length(unique(end)),max_end=max(end), min_end=min(end)) %>% 
