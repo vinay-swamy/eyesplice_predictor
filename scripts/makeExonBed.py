@@ -295,17 +295,18 @@ exon_windows= (exon_windows
 # In[8]:
 
 
+min_samps=min(alt_spliced_windows.shape[0], ref_altSplice_windows.shape[0],
+              intron_windows.shape[0], exon_windows.shape[0])
 complete_bed=(pd.concat([alt_spliced_windows,
-                         ref_altSplice_windows,
-                         intron_windows,
-                         exon_windows])
+                         ref_altSplice_windows.sample(min_samps*2),
+                         intron_windows.sample(min_samps*2),
+                         exon_windows.sample(min_samps*2)
+                        ])
               .reset_index(drop=True)
              )
 bad=complete_bed.assign(length= lambda x:x['wend']-x['wstart']).query('length<@wsize*2').shape
 if bad[0] >0:
     print('Warning: {} rows are less than minimum window size')
-
-
 # In[13]:
 
 
