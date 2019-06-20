@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[1]:
+# In[69]:
 
 
 from pybedtools import BedTool
@@ -11,11 +11,10 @@ import os
 import numpy as np
 import random as rd
 args=sys.argv
-wd=args[1]
-ref_gtf_file=args[2]
-wsize=int(args[3])
-out_bed_file=args[4]
-#love stealing my own code
+#wd=args[1]
+#ref_gtf_file=args[2]
+#wsize=args[3]  
+#love stealing my own code 
 def read_GTF(file):
     def file_len(fname):
         with open(fname) as f:
@@ -60,13 +59,11 @@ def bool_to_split(dfs):
     idx=rd.sample(l, int(dfs/2))
     idx_bool=[True if i in idx else False for i in l]
     return(idx_bool)
-#not going to worray about account for tpm exp, but just gonna have a exp threshold in prep step
-os.chdir(wd)
-#os.chdir('/Users/vinayswamy/NIH/eyesplice_predictor')
-# wsize=40
-# ref_gtf_file='ref/gencodeAno_comp.gtf'
-# out_bed_file='complete_windows.bed'
 
+#not going to worray about account for tpm exp, but just gonna have a exp threshold in prep step
+os.chdir('/Users/vinayswamy/NIH/eyesplice_predictor')
+wsize=40
+ref_gtf_file='ref/gencodeAno_comp.gtf'
 ref_gtf=read_GTF(ref_gtf_file)
 
 SL_score=111
@@ -77,18 +74,18 @@ I_score=555
 E_score=666
 
 
-# In[2]:
+# In[71]:
 
 
-
+toy=ref_gtf.head(1000)
 '''
-find all exons that that start on the same coordinate, but end on different coordinates. Do the same but end same and start changes.
+find all exons that that start on the same coordinate, but end on different coordinates. Do the same but end same and start changes. 
 Right now for simplicity sake, Im only selecting alt spliced exons that come in 2 versions
 end format for these 2 is BED
 ps peep the pretty new formatting
 '''
 
-end_longer_all=(ref_gtf
+end_longer_all=(toy
                 .query('type == "exon"')
                 .groupby(['seqid', 'strand', 'start'], as_index=False)
                 .agg({ 'end':['min', 'max', 'count']})
@@ -96,13 +93,13 @@ end_longer_all=(ref_gtf
                )
 end_longer_all.columns=['seqid', 'strand', 'start', 'min_end', 'max_end', 'count']
 end_longer_all=(end_longer_all
-                .assign(short_length= lambda x: x['min_end'] -x['start'],
+                .assign(short_length= lambda x: x['min_end'] -x['start'], 
                         long_length= lambda x: x['max_end'] - x['min_end'])
                 .query('count > 1')
                )
 end_longer= (end_longer_all
              .query('count == 2 & short_length >= @wsize & long_length >=@wsize')
-             .assign(wstart= lambda x: x['min_end']-wsize,
+             .assign(wstart= lambda x: x['min_end']-wsize, 
                      wend= lambda x: x['min_end']+wsize,
                      name = lambda x: ['EL_' + str(i) for i in range(len(x.index))])
              .reset_index(drop=True)
@@ -110,7 +107,7 @@ end_longer= (end_longer_all
              .loc[:,['seqid', 'wstart', 'wend', 'name', 'score', 'strand']]
             )
 
-start_longer_all= (ref_gtf
+start_longer_all= (toy
                    .query('type == "exon"')
                    .groupby(['seqid','strand', 'end'], as_index=False)
                    .agg({'start':['min', 'max', 'count']})
@@ -118,14 +115,14 @@ start_longer_all= (ref_gtf
                   )
 start_longer_all.columns=['seqid', 'strand', 'end', 'min_start', 'max_start','count' ]
 start_longer_all=(start_longer_all
-                  .assign(short_length= lambda x: x['end'] -x['max_start'],
+                  .assign(short_length= lambda x: x['end'] -x['max_start'], 
                           long_length= lambda x: x['max_start']-x['min_start'])
                   .query('count > 1')
                  )
 start_longer= (start_longer_all
                .query("count == 2 & short_length>= @wsize & long_length >= @wsize")
-               .assign(wstart= lambda x: x['max_start']- wsize,
-                       wend= lambda x: x['max_start'] + wsize ,
+               .assign(wstart= lambda x: x['max_start']- wsize, 
+                       wend= lambda x: x['max_start'] + wsize , 
                        name = lambda x: ['SL_' + str(i) for i in range(len(x.index))])
                .reset_index(drop=True)
                .assign(score=SL_score)
@@ -134,12 +131,12 @@ start_longer= (start_longer_all
 alt_spliced_windows=pd.concat([end_longer, start_longer]).reset_index(drop=True)
 
 
-# In[3]:
+# In[77]:
 
 
-#********BUG anti_joins are not in pandas (SAD) and the method I'm using can sometimes coerce to int64 to floats, which makes bedtools wig out **********************#
+#********BUG anti_joins are not in pandas (SAD) and the method I'm using can sometimes coerce to int64 to floats, which makes bedtools wig out **********************# 
 
-exon_no_change= (ref_gtf #first, anti_join out known exon locations.
+exon_no_change= (toy #first, anti_join out known exon locations.
                    .query('type == "exon"').loc[:,['seqid', 'strand', 'start', 'end']]
                    .merge(end_longer_all.loc[:,['seqid','strand', 'start']],
                           how='outer',indicator=True)
@@ -147,11 +144,11 @@ exon_no_change= (ref_gtf #first, anti_join out known exon locations.
                    .drop(columns=['_merge'])
                    .assign(start= lambda x: x['start'].astype(np.int64),
                             end= lambda x: x['end'].astype(np.int64))
-                   .merge(start_longer_all.loc[:,['seqid','strand','end']],
+                   .merge(start_longer_all.loc[:,['seqid','strand','end']], 
                           how='outer', indicator=True)
                    .query('_merge == "left_only"')
                    .drop(columns=['_merge'])
-                   .assign(start= lambda x: x['start'].astype(np.int64),
+                   .assign(start= lambda x: x['start'].astype(np.int64), 
                            end= lambda x: x['end'].astype(np.int64),
                            name= 'nc', score=I_score)
                    .loc[:,['seqid', 'start', 'end', 'name', 'score', 'strand']]
@@ -170,19 +167,19 @@ exon_no_change= (ref_gtf #first, anti_join out known exon locations.
                 )
 
 
-# In[4]:
+# In[84]:
 
 
 dfs=len(exon_no_change.index)
 spl=np.array(bool_to_split(dfs))
 exons_for_junc=exon_no_change.iloc[spl].reset_index(drop=True)
-#junction set first
+#junction set first 
 spl_junc=np.array(bool_to_split(len(exons_for_junc.index)))
 junc_sl=(exons_for_junc
          .iloc[spl_junc]
          .reset_index(drop=True)
-         .assign(wstart =lambda x: x['start'] -wsize,
-                wend=lambda x: x['start']+wsize,
+         .assign(wstart =lambda x: x['start'] -wsize, 
+                wend=lambda x: x['start']+wsize, 
                 name=lambda x: ['ref_SL_'+str(i) for i in range(len(x.index))],
                 score=R_SL_score)
          .loc[:,['seqid', 'wstart', 'wend', 'name', 'score', 'strand']]
@@ -191,8 +188,8 @@ junc_sl=(exons_for_junc
 junc_el=(exons_for_junc
          .iloc[~spl_junc]
          .reset_index(drop=True)
-         .assign(wstart=lambda x: x['end'] -wsize,
-                 wend=lambda x: x['end']+wsize,
+         .assign(wstart=lambda x: x['end'] -wsize, 
+                 wend=lambda x: x['end']+wsize, 
                  name =lambda x: ['ref_EL_' + str(i) for i in range(len(x.index))],
                  score=R_EL_score)
          .loc[:,['seqid', 'wstart', 'wend', 'name', 'score', 'strand']]
@@ -216,7 +213,7 @@ exons_for_exon=(exon_no_change
 exons_for_exon.head()
 
 
-# In[5]:
+# In[87]:
 
 
 '''
@@ -225,25 +222,25 @@ subtract out all known exons from all transcripts, but pad the exons on wither e
     - cant overlap with alt_splcied exons, bc window < long exon end. but fo the ref ones, the pad takes care of it.
 '''
 pad=wsize+5
-ref_txs=(ref_gtf
+ref_txs=(toy
          .query('type == "transcript"')
          .loc[:,['seqid', 'start','end','transcript_id','score','strand']]
          .assign(score=1000)
          .reset_index(drop=True)
         )
 
-ref_exons=(ref_gtf
+ref_exons=(toy
            .query('type == "exon"')
            .loc[:,['seqid', 'start','end','transcript_id','score','strand']]
-           .assign(score=1000,
-                   start= lambda x: x['start'] -pad,
+           .assign(score=1000, 
+                   start= lambda x: x['start'] -pad, 
                    end = lambda x: x['end'] +pad)
            .reset_index(drop=True)
           )
 
 introns=(ref_txs
          .pipe(BedTool.from_dataframe)
-         .subtract(ref_exons.pipe(BedTool.from_dataframe),
+         .subtract(ref_exons.pipe(BedTool.from_dataframe), 
                    s=True)
          .to_dataframe()
          .assign(length=lambda x: x['end']-x['start'])
@@ -253,7 +250,7 @@ introns=(ref_txs
         )
 
 
-# In[6]:
+# In[95]:
 
 
 def make_random_window(ser, ws=wsize *2):
@@ -272,13 +269,13 @@ intron_windows=(introns
                )
 
 
-# In[7]:
+# In[94]:
 
 
 #exon for exon does not overlap with either ref_alt or alt, so don't need to worry about that
 #also cannot overlap with intron version based on above logic, so don't worry about that either
 exon_windows= (exons_for_exon.reset_index(drop=True)
-                .assign(name='x',
+                .assign(name='x', 
                         score=E_score,
                         length=lambda x: x['end'] - x['start'])
                 .query('length >= @wsize*2 +1 ') # remove potential windows with
@@ -292,21 +289,14 @@ exon_windows= (exon_windows
                 )
 
 
-# In[8]:
+# In[97]:
 
 
-complete_bed=(pd.concat([alt_spliced_windows,
-                         ref_altSplice_windows,
-                         intron_windows,
+complete_bed=(pd.concat([alt_spliced_windows, 
+                         ref_altSplice_windows, 
+                         intron_windows, 
                          exon_windows])
               .reset_index(drop=True)
              )
-bad=complete_bed.assign(length= lambda x:x['wend']-x['wstart']).query('length<@wsize*2').shape
-if bad[0] >0:
-    print('Warning: {} rows are less than minimum window size')
+complete_bed.to_csv(out_bed_file, columns=False, index=False)
 
-
-# In[13]:
-
-
-complete_bed.to_csv(out_bed_file, header=False, index=False, sep='\t')
