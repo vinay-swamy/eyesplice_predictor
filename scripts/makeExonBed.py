@@ -298,11 +298,6 @@ exon_windows= (exon_windows
                 .assign(name=lambda x: ['exon_'+str(i) for i in range(len(x.index))])
                 )
 
-print(alt_spliced_windows.shape)
-print(ref_altSplice_windows.shape)
-print(intron_windows.shape)
-print(exon_windows.shape)
-
 
 # In[9]:
 
@@ -310,9 +305,9 @@ print(exon_windows.shape)
 min_samps=min(alt_spliced_windows.shape[0], ref_altSplice_windows.shape[0], 
               intron_windows.shape[0], exon_windows.shape[0])
 complete_bed=(pd.concat([alt_spliced_windows, 
-                         ref_altSplice_windows.sample(min_samps*2), 
-                         intron_windows.sample(min_samps*2), 
-                         exon_windows.sample(min_samps*2)
+                         ref_altSplice_windows.sample(min_samps), 
+                         intron_windows.sample(min_samps), 
+                         exon_windows.sample(min_samps)
                         ])
               .reset_index(drop=True)
              )
