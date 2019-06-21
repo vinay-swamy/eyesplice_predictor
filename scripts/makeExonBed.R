@@ -25,7 +25,8 @@ sample_table <- read_tsv(sample_file, col_names = c('sample', 'run', 'paired','t
 
 end_longer_all <- filter(ref_gtf, type == 'exon') %>% group_by(seqid, strand, start ) %>% 
     summarise(n=length(unique(end)),max_end=max(end), min_end=min(end)) %>% 
-    mutate(short_length=min_end-start, long_length=max_end-min_end) %>% filter(n>1)
+    mutate(short_length=min_end-start, long_length=max_end-min_end) %>% arrange(seqid, start) %>% filter(n>1)
+
 end_longer <- end_longer_all %>% filter(n==2, short_length>=wsize, long_length>=wsize) %>% ungroup %>% 
     mutate(wstart=min_end-wsize, wend=min_end+wsize, name=paste0('EL_', 1:nrow(.)), score=1000)
 start_longer_all <- filter(ref_gtf, type == 'exon') %>% group_by(seqid, strand, end ) %>% 
@@ -33,6 +34,8 @@ start_longer_all <- filter(ref_gtf, type == 'exon') %>% group_by(seqid, strand, 
     mutate(short_length=end-max_start, long_length=max_start-min_start) %>% filter(n>1)
 start_longer <- start_longer_all %>% filter(n==2,short_length>=wsize, long_length>=wsize ) %>% ungroup %>% 
     mutate(wstart=max_start-wsize, wend=max_start+wsize, name=paste0('SL_', 1:nrow(.)), score=1000 ) 
+
+
 exons_no_change <- ref_gtf %>% filter(type =='exon') %>% anti_join(end_longer_all %>% select(seqid, strand, start) ) %>% 
     anti_join(start_longer_all %>% select(seqid, strand, end )) %>% mutate(length=end-start) %>% filter(length>wsize) 
 write_tsv(end_longer_all, grow_full_end_tab)
