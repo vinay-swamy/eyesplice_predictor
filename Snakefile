@@ -36,7 +36,7 @@ mosdepth_version=config['mosdepth_version']
 bedtools_version=config['bedtools_version']
 working_dir=config['working_dir']
 win_size=config['window_size']
-
+wsize=40
 sample_file=config['sampleFile']
 sample_dict=readSampleFile(config['sampleFile'])# sampleID:dict{path,paired,metadata}
 sample_names=sample_dict.keys()
@@ -49,7 +49,9 @@ subtissues=['RPE_Fetal.Tissue', 'synth']
 rmats_events=['SE','RI','MXE','A5SS','A3SS']
 rule all:
     input: expand('quant_files/{sampleID}/quant.sf', sampleID=sample_names),\
-    'data/all_exons.bed', expand('data/cleaned/{sample}_bp_features.tsv', sample=sample_names)
+    'data/bed_files/gencode_alternative_exons.bed',\
+    expand('coverage_files/{id}.per-base.bed.gz', id=sample_names),\
+     expand('data/cleaned_cov/{sample}_bp_features.tsv.gz', sample=sample_names)
 
 rule build_STARindex:
     input:genome, gtf
@@ -99,14 +101,6 @@ rule calculate_cov:
         sample={wildcards.id}
         mosdepth coverage_files/$sample {input[0]}
         '''
-rule build_salmon_index:
-    input:  tx_fasta
-    output: directory('ref/salmonindex_st')
-    shell:
-        '''
-        module load {salmon_version}
-        salmon index -t {input} --gencode -i {output} --type quasi --perfectHash -k 31
-        '''
 
 
 rule run_salmon:
@@ -121,37 +115,20 @@ rule run_salmon:
         salmon quant -p 4 -i {input.index} -l A --gcBias --seqBias  {params.cmd} -o quant_files/$id
         '''
 rule makeExonBeds:
-    input: expand('quant_files/{sampleID}/quant.sf', sampleID=sample_names)
-    output: expand('data/{type}_{direction}_full_tab.tsv',type=['grow', 'ref'],direction=['end', 'start']),\
-      expand('data/{type}_{direction}_longer.bed',type=['grow', 'ref'], direction=['end', 'start'] )
+    input: expand('quant_files/{sample}/quant.sf', sample=sample_names)
+    output:'data/bed_files/gencode_alternative_exons.bed'
     shell:
         '''
-        module load {R_version}
-        Rscript scripts/makeExonBed.R {working_dir} {sample_file} {gtf} {win_size} {output}
+        python3 scripts/makeExonBed.py {working_dir} {gtf} {wsize} {output}
         '''
-rule mergeBeds:
-    input: expand('data/{type}_{direction}_longer.bed',type=['grow','ref'], direction=['end', 'start'] )
-    output:'data/all_exons.bed'
-    shell:
-        '''
-        module load {bedtools_version}
-        bash scripts/merge_beds_distinct.sh {input} {output}
-        '''
-
-rule intersect_coverage:
-    input:'data/all_exons.bed', 'coverage_files/{sample}.per-base.bed.gz'
-    output:'coverage_files/{sample}_exon_cov.bed'
+rule intersect_and_spread:
+    input:'data/bed_files/gencode_alternative_exons.bed','coverage_files/{sample}.per-base.bed.gz'
+    output:'data/cleaned_cov/{sample}_bp_features.tsv.gz'
     shell:
         '''
         module load bedtools
-        cut -f1,2,3,4 {input[0]} |
-        bedtools intersect -loj -a {input[1]} -b stdin | awk ' $6 != "-1"' - >  {output}
-        '''
-
-rule spread_coverage:
-    input:'coverage_files/{sample}_exon_cov.bed'
-    output: 'data/cleaned/{sample}_bp_features.tsv'
-    shell:
-        '''
-        python3 scripts/makePerBaseFeatureTable.py {working_dir} {input} {output}
+        cut -f1,2,3,4 {input[0]} |\
+         bedtools intersect -loj -a {input[1]} -b stdin |\
+         awk ' $6 != "-1"' - |\
+         python3 scripts/makePerBaseFeatureTable.py {working_dir} {output}
         '''
