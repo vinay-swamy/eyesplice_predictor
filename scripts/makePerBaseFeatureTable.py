@@ -2,6 +2,7 @@ import pandas as pd
 import os
 import sys
 from itertools import chain
+from multiprocessing.pool import ThreadPool
 
 args=sys.argv
 wd=args[1]
@@ -27,7 +28,9 @@ cov_df=pd.read_csv(infile,sep='\t' , names=['seqid','start', 'end', 'cov','w_seq
 
 
 all_windows=list(cov_df['window'].unique())
-res=[spread_coverage(e) for e in all_windows]
+#res=[spread_coverage(e) for e in all_windows]
+pool=ThreadPool()
+res=pool.map(spread_coverage, all_windows)
 fin=pd.DataFrame(res)
 
 fin.to_csv(outfile,sep='\t',header=False, index=False,compression='gzip' )
