@@ -19,6 +19,12 @@ def tissue_to_gtf(tissue, sample_dict):
         if sample_dict[sample]['tissue']==tissue :
             res.append('st_out/{}.gtf'.format(sample))
     return (res)
+def tissue_sample_cov(sample_dict):
+    res=[]
+    for sample in sample_dict.keys():
+        res.append('data/cleaned_cov/{}/{}_bp_features.tsv.gz'.format(sample_dict[sample]['tissue'], sample))
+    return(res)
+
 
 #software versioning
 salmon_version=config['salmon_version']
@@ -48,10 +54,7 @@ bam_path=config['bam_path']
 subtissues=['RPE_Fetal.Tissue', 'synth']
 rmats_events=['SE','RI','MXE','A5SS','A3SS']
 rule all:
-    input: expand('quant_files/{sampleID}/quant.sf', sampleID=sample_names),\
-    'data/bed_files/gencode_alternative_exons.bed',\
-    expand('coverage_files/{id}.per-base.bed.gz', id=sample_names),\
-     expand('data/cleaned_cov/{sample}_bp_features.tsv.gz', sample=sample_names)
+    input: tissue_sample_cov(sample_dict)
 
 rule build_STARindex:
     input:genome, gtf
@@ -114,16 +117,31 @@ rule run_salmon:
         module load {salmon_version}
         salmon quant -p 4 -i {input.index} -l A --gcBias --seqBias  {params.cmd} -o quant_files/$id
         '''
-rule makeExonBeds:
-    input: expand('quant_files/{sample}/quant.sf', sample=sample_names)
-    output:'data/bed_files/gencode_alternative_exons.bed'
+
+
+
+rule aggregate_salmon_counts:
+    input: qfiles=expand('quant_files/{sample}/quant.sf', sample=sample_names), gtf=gtf
+    params: qfolder='quant_files'
+    output: 'data/quant/tx_quant.tsv', 'data/quant/gene_quant.tsv'
     shell:
         '''
-        python3 scripts/makeExonBed.py {working_dir} {gtf} {wsize} {output}
+        module load {R_version}
+        Rscript scripts/makeCountTables.R {working_dir} {input.gtf} {params.qfolder} {output}
+        '''
+
+
+
+rule makeExonBeds:
+    input: tx_quant='data/quant/tx_quant.tsv'
+    output:'data/bed_files/{subtissue}_alternative_exons.bed'
+    shell:
+        '''
+        python3 scripts/makeExonBed.py {working_dir} {gtf} {sample_file} {input.tx_quant} {wildcards.subtissue} {wsize} {output}
         '''
 rule intersect_and_spread:
-    input:'data/bed_files/gencode_alternative_exons.bed','coverage_files/{sample}.per-base.bed.gz'
-    output:'data/cleaned_cov/{sample}_bp_features.tsv.gz'
+    input:lambda wildcards: 'data/bed_files/{}_alternative_exons.bed'.format(wildcards.subtissue),'coverage_files/{sample}.per-base.bed.gz'
+    output:'data/cleaned_cov/{subtissue}/{sample}_bp_features.tsv.gz'
     shell:
         '''
         module load bedtools
