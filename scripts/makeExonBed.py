@@ -13,8 +13,11 @@ import random as rd
 args=sys.argv
 wd=args[1]
 ref_gtf_file=args[2]
-wsize=int(args[3])
-out_bed_file=args[4]
+sample_file=args[3]
+tx_quant_file=args[4]
+subtissue=args[5]
+wsize=int(args[6])
+out_bed_file=args[7]
 #love stealing my own code 
 def read_GTF(file):
     def file_len(fname):
@@ -57,7 +60,7 @@ def read_GTF(file):
 def bool_to_split(dfs):
     rd.seed(8774)
     l=[l for l in range(dfs)]
-    idx=rd.sample(l, int(dfs/2))
+    idx=set(rd.sample(l, int(dfs/2)))
     idx_bool=[True if i in idx else False for i in l]
     return(idx_bool)
 #not going to worray about account for tpm exp, but just gonna have a exp threshold in prep step
@@ -65,7 +68,13 @@ os.chdir(wd)
 # os.chdir('/Users/vinayswamy/NIH/eyesplice_predictor')
 # wsize=40
 # ref_gtf_file='ref/gencodeAno_comp.gtf'
+# sample_file='sampleTableESP.tsv'
+# tx_quant_file='data/quant/tx_quant.tsv'
+# subtissue='RPE_Fetal.Tissue'
 # out_bed_file='complete_windows.bed'
+
+sample_table=pd.read_csv(sample_file, sep='\t', names=['sample', 'run', 'paired', 'tissue', 'subtissue','origin']).query('subtissue == @subtissue')
+tx_quant=pd.read_csv(tx_quant_file, sep='\t').loc[:,['transcript_id']+list(sample_table['sample'])]
 
 ref_gtf=read_GTF(ref_gtf_file)
 #ref_gtf=ref_gtf.head(1000)
@@ -77,7 +86,22 @@ I_score=555
 E_score=666
 
 
-# In[2]:
+# In[3]:
+
+
+'''
+A different bed file will be created for each subtissue type, were are only going to build the bed file from expressed transcripts
+
+'''
+keep=(tx_quant
+      .iloc[:,1:]
+      .sum(axis=1) >= len(sample_table.index)  
+    )
+tx_quant=tx_quant[keep]
+ref_gtf=ref_gtf[ref_gtf['transcript_id'].isin(tx_quant["transcript_id"])]
+
+
+# In[4]:
 
 
 
@@ -145,6 +169,12 @@ end_longer_all.head()
 
 
 #********BUG anti_joins are not in pandas (SAD) and the method I'm using can sometimes coerce to int64 to floats, which makes bedtools wig out **********************# 
+'''
+remove any exons we are using for start/end longer (hence the above problem with antijoins)
+
+
+'''
+
 
 exon_no_change= (ref_gtf #first, anti_join out known exon locations.
                    .query('type == "exon"').loc[:,['seqid', 'strand', 'start', 'end']]
