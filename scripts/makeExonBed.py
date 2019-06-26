@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[1]:
+# In[32]:
 
 
 from pybedtools import BedTool
@@ -63,18 +63,26 @@ def bool_to_split(dfs):
     idx=set(rd.sample(l, int(dfs/2)))
     idx_bool=[True if i in idx else False for i in l]
     return(idx_bool)
-#not going to worray about account for tpm exp, but just gonna have a exp threshold in prep step
-os.chdir(wd)
-# os.chdir('/Users/vinayswamy/NIH/eyesplice_predictor')
-# wsize=40
-# ref_gtf_file='ref/gencodeAno_comp.gtf'
-# sample_file='sampleTableESP.tsv'
-# tx_quant_file='data/quant/tx_quant.tsv'
-# subtissue='RPE_Fetal.Tissue'
-# out_bed_file='complete_windows.bed'
+'''
+Overall process 
+    -first, find all exons that have an alternative 3'(end longer) or alternative 5'(start_longer)
+    -create a window where the junciton between the long and short forms is the middle of the window
+    -
+
+'''
+
+
+#os.chdir(wd)
+os.chdir('/Users/vinayswamy/NIH/eyesplice_predictor')
+wsize=40
+ref_gtf_file='ref/gencodeAno_comp.gtf'
+sample_file='sampleTableESP.tsv'
+tx_quant_file='testing/GC_pc_tx_quant.tx'
+subtissue='RPE_Fetal.Tissue'
+out_bed_file='testing/new_script_old_txquant.bed'
 
 sample_table=pd.read_csv(sample_file, sep='\t', names=['sample', 'run', 'paired', 'tissue', 'subtissue','origin']).query('subtissue == @subtissue')
-tx_quant=pd.read_csv(tx_quant_file, sep='\t').loc[:,['transcript_id']+list(sample_table['sample'])]
+tx_quant=pd.read_csv(tx_quant_file, sep='\t')#.loc[:,['transcript_id']+list(sample_table['sample'])]
 
 ref_gtf=read_GTF(ref_gtf_file)
 #ref_gtf=ref_gtf.head(1000)
@@ -86,30 +94,37 @@ I_score=555
 E_score=666
 
 
-# In[3]:
+# In[33]:
+
+
+tx_quant.shape
+ref_gtf.shape
+
+
+# In[34]:
 
 
 '''
-A different bed file will be created for each subtissue type, were are only going to build the bed file from expressed transcripts
+A different bed file will be created for each subtissue type, were are only going to build the window bed file from transcripts expressed in the target tissue
 
 '''
 keep=(tx_quant
       .iloc[:,1:]
-      .sum(axis=1) >= len(sample_table.index)  
+      .sum(axis=1) > len(sample_table.index)  
     )
 tx_quant=tx_quant[keep]
 ref_gtf=ref_gtf[ref_gtf['transcript_id'].isin(tx_quant["transcript_id"])]
 
 
-# In[4]:
+# In[35]:
 
 
 
 '''
 find all exons that that start on the same coordinate, but end on different coordinates. Do the same but end same and start changes. 
 Right now for simplicity sake, Im only selecting alt spliced exons that come in 2 versions
-end format for these 2 is BED
-ps peep the pretty new formatting
+out format for these 2 is BED
+
 '''
 
 end_longer_all=(ref_gtf
@@ -159,19 +174,15 @@ start_longer= (start_longer_all
 alt_spliced_windows=pd.concat([end_longer, start_longer]).reset_index(drop=True)
 
 
-# In[3]:
+# In[6]:
 
 
-end_longer_all.head()
-
-
-# In[4]:
-
-
-#********BUG anti_joins are not in pandas (SAD) and the method I'm using can sometimes coerce to int64 to floats, which makes bedtools wig out **********************# 
+#********BUG anti_joins are not in pandas (SAD) and the method I'm using can sometimes coerce int64 to floats, which makes bedtools wig out **********************# 
 '''
-remove any exons we are using for start/end longer (hence the above problem with antijoins)
+remove any exons got used above using for start/end longer (hence the above problem with antijoins)
+antijoin again with bedtools to be real sure 
 
+every exon in below table doesn't get longer/shorter and doesn't overlap with any regions in table above
 
 '''
 
@@ -207,9 +218,13 @@ exon_no_change= (ref_gtf #first, anti_join out known exon locations.
                 )
 
 
-# In[5]:
+# In[7]:
 
 
+'''
+split the no change exons into 2 tables, one to use to make the no-change exon junction class, and one to use to make exon/intron classes
+
+'''
 dfs=len(exon_no_change.index)
 spl=np.array(bool_to_split(dfs))
 exons_for_junc=exon_no_change.iloc[spl].reset_index(drop=True)
@@ -253,12 +268,12 @@ exons_for_exon=(exon_no_change
 exons_for_exon.head()
 
 
-# In[6]:
+# In[8]:
 
 
 '''
 Now need to get regions of intronic coverage
-subtract out all known exons from all transcripts, but pad the exons on wither end, st that pad > wsize. This way we are for sure that the intronic region over lap with none of our previous windows
+subtract out all known exons from all transcripts, but pad the exons on wither end, such that pad > wsize. This way we are for sure that the intronic region over lap with none of our previous windows
     - cant overlap with alt_splcied exons, bc window < long exon end. but fo the ref ones, the pad takes care of it.
 '''
 pad=wsize+5
@@ -290,7 +305,7 @@ introns=(ref_txs
         )
 
 
-# In[7]:
+# In[9]:
 
 
 def make_random_window(ser, ws=wsize *2):
@@ -309,7 +324,7 @@ intron_windows=(introns
                )
 
 
-# In[8]:
+# In[10]:
 
 
 #exon for exon does not overlap with either ref_alt or alt, so don't need to worry about that
@@ -329,7 +344,7 @@ exon_windows= (exon_windows
                 )
 
 
-# In[9]:
+# In[11]:
 
 
 min_samps=min(alt_spliced_windows.shape[0], ref_altSplice_windows.shape[0], 
@@ -346,7 +361,7 @@ if bad[0] >0:
     print('Warning: {} rows are less than minimum window size')
 
 
-# In[10]:
+# In[13]:
 
 
 complete_bed.to_csv(out_bed_file, header=False, index=False, sep='\t')
