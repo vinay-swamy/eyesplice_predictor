@@ -77,12 +77,12 @@ os.chdir(wd)
 # wsize=40
 # ref_gtf_file='ref/gencodeAno_comp.gtf'
 # sample_file='sampleTableESP.tsv'
-# tx_quant_file='testing/GC_pc_tx_quant.tx'
+# tx_quant_file='data/GC_pc_tx_quant.tsv.gz'
 # subtissue='RPE_Fetal.Tissue'
 # out_bed_file='testing/new_script_old_txquant.bed'
 
 sample_table=pd.read_csv(sample_file, sep='\t', names=['sample', 'run', 'paired', 'tissue', 'subtissue','origin']).query('subtissue == @subtissue')
-tx_quant=pd.read_csv(tx_quant_file, sep='\t')#.loc[:,['transcript_id']+list(sample_table['sample'])]
+tx_quant=pd.read_csv(tx_quant_file, sep='\t').loc[:,['transcript_id']+list(sample_table['sample'])]
 
 ref_gtf=read_GTF(ref_gtf_file)
 #ref_gtf=ref_gtf.head(1000)
